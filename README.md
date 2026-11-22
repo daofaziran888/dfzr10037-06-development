@@ -73,6 +73,41 @@ npm run dev
 | 定时任务 | `schedule_job` | 调度作业 | 作业编号、任务类型、关联图谱 |
 | 治理看板 | `govern_dash` | 治理指标 | 指标编号、指标名称、评估对象 |
 
+## 可复核质量指标（治理看板）
+
+`/govern_dash` 是治理看板的专用页面，除原有指标台账外，还展示两轮质量审计样本的
+分层聚合指标。取样数据在 `backend/app/quality_seed.py`：第 1 轮只抽 10 个重叠实体，
+第 2 轮扩围到 10 个重叠 + 5 个新增实体。
+
+- **分子/分母**：分子是判定为错连的关系条数，分母是抽检关系条数；两者随指标一起返回。
+- **图谱版本**：每个指标、每条错连明细都带 `graph_version`（R1 `kg-2026Q3-v3`，
+  R2 `kg-2026Q4-v4`），可用 `/api/quality/evidence` 逐条回查。
+- **两种口径**：同口径只取两轮共同抽到的实体，改善率 20% → 10%（改善）；扩围全量
+  因为新增样本大量错连，错连率 20% → 33.33%（恶化）。后者的分子分母构成不同，
+  接口标记为 `not_comparable`，不给出改善率。
+- **样本缺失保护**：基线样本不可取得时，`/api/quality/compare` 返回
+  `status=baseline_missing`、`improvement_rate=null`，并明确记录被拦截的
+  「全量错连率直接相减」算法；不会把全量变化折算成改善率。
+- **整改派发**：只有带明细编号的错连进入整改清单（本轮 47 条），未落明细的
+  3 条只登记不派发。同步后写入 `quality_audit` 模块，进入既有「指派整改」流程。
+- **受理回执**：按「轮次 + 口径」留存快照，新口径重算不影响旧范围回执；样本缺失后
+  回执显示「原样本不可取得」，保留受理时快照且不给改善结论。
+
+主要接口：
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/quality/dashboard` | 看板取数（新口径、旧口径、两轮比较、回执） |
+| `GET /api/quality/metrics?round=2&scope=expanded\|overlap` | 单轮分层指标 |
+| `GET /api/quality/compare?baseline=1&current=2` | 同口径比较与趋势冲突判断 |
+| `GET /api/quality/evidence?round=2&stratum=all` | 错连明细回查 |
+| `GET /api/quality/remediation?round=2&scope=...` | 整改清单预览 |
+| `POST /api/quality/remediation/sync?round=2&scope=...` | 同步取样结果并留存回执 |
+| `GET /api/quality/receipts/{receipt_id}` | 已受理范围核对 |
+| `POST /api/quality/samples/availability` | 标记/恢复样本可用性，验证口径降级 |
+
+后端测试：`cd backend && .venv/bin/python -m pytest tests -q`。
+
 ## 约定
 
 - 全部模块共享`frontend/src/views/WorkbenchView.vue|tsx`和一套资源路由。

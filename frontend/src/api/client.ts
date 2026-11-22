@@ -15,7 +15,12 @@ export function request(path: string, init?: RequestInit): Promise<Response> {
 export async function fetchJson<T>(path: string): Promise<T> {
   const response = await request(path)
   if (!response.ok) {
-    throw new Error(`接口返回 ${response.status}，数据未更新`)
+    const detail = await response
+      .json()
+      .then((payload: { detail?: unknown }) => payload?.detail)
+      .catch(() => null)
+    const suffix = typeof detail === 'string' && detail ? `：${detail}` : ''
+    throw new Error(`接口返回 ${response.status}，数据未更新${suffix}`)
   }
   return (await response.json()) as T
 }
